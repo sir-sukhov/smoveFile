@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!--Example configuration-->
+<configuration>
+<!--    Flow is moving files from source to destination-->
+<!--    One flow - one thread-->
+<!--    Number of concurrent file transfers in one flow-->
+    <flows>
+        <flow>
+            <executors>2</executors>
+            <source>
+                <host>127.0.0.1</host>
+                <port>22</port>
+                <user>smovefile</user>
+                <identity>~/.ssh/smove_rsa</identity>
+                <knownHosts>~/.ssh/known_hosts</knownHosts>
+                <path>/tmp/source</path>
+                <templates>
+                    <template>(.*)\.xml</template>
+                    <template>(.*)\.json</template>
+                </templates>
+            </source>
+            <destination>
+                <host>127.0.0.1</host>
+                <port>22</port>
+                <user>smovefile</user>
+                <identity>~/.ssh/smove_rsa</identity>
+                <knownHosts>~/.ssh/known_hosts</knownHosts>
+                <path>/tmp/destination</path>
+            </destination>
+        </flow>
+        <flow>
+            <executors>1</executors>
+            <source>
+                <host>127.0.0.1</host>
+                <port>22</port>
+                <user>smovefile</user>
+                <identity>~/.ssh/smove_rsa</identity>
+                <knownHosts>~/.ssh/known_hosts</knownHosts>
+                <path>/tmp/newsource</path>
+                <templates>
+                    <template>(.*)\.xml</template>
+                    <template>(.*)Secret(.*)\.jpg</template>
+                </templates>
+            </source>
+            <destination>
+                <host>127.0.0.1</host>
+                <port>22</port>
+                <user>smovefile</user>
+                <identity>~/.ssh/smove_rsa</identity>
+                <knownHosts>~/.ssh/known_hosts</knownHosts>
+                <path>/tmp/newdestination</path>
+            </destination>
+        </flow>
+    </flows>
+</configuration>
