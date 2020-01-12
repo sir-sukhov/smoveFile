@@ -19,6 +19,7 @@ public class Flow implements Runnable {
     private Destination destination;
     private int executorNumber;
     private Map<String, Future> tasks = new HashMap<>();
+    private Map<String, Candidate> candidates = new HashMap<>();
     private static final Logger logger = Logger.getLogger(Flow.class.getName());
 
     public Flow(Source source, Destination destination, int executorNumber) {
@@ -45,52 +46,51 @@ public class Flow implements Runnable {
             channel = session.openChannel("sftp");
             channel.connect();
             ChannelSftp channelSftp = (ChannelSftp) channel;
-            StringBuilder sb = new StringBuilder();
-            Vector fileList = null;
+            Vector fileList;
             while (!Thread.currentThread().isInterrupted()) {
-                sb.setLength(0);
+                Candidate candidate;
                 fileList = channelSftp.ls(source.getPath());
-                sb.append("Directory listing for host ").
-                        append(source.getHost()).
-                        append(" path ").
-                        append(source.getPath()).
-                        append("\n\t");
-                for (int i = 0; i < fileList.size(); i++) {
-                    ChannelSftp.LsEntry entry = (ChannelSftp.LsEntry) fileList.get(i);
-                    sb.append(entry.getFilename());
+                for (Object o : fileList) {
+                    ChannelSftp.LsEntry entry = (ChannelSftp.LsEntry) o;
                     if (!((entry.getFilename()).endsWith(".part")) && !(entry.getFilename().startsWith(".")) && (entry.getAttrs().isReg())) {
                         for (String template : source.getTemplates()) {
                             if ((entry.getFilename()).matches(template)) {
-                                if (tasks.containsKey(entry.getFilename())) {
-                                    // Checking move file status
-                                    if (tasks.get(entry.getFilename()).isDone()) {
-                                        sb.append(" <-- file movement is DONE");
+                                if (candidates.containsKey(entry.getFilename()) && (!tasks.containsKey(entry.getFilename()))) {
+                                    candidate = candidates.get(entry.getFilename());
+                                    if (candidate.getScore() >= 3) {
+                                        // Adding new task
+                                        logger.log(Level.INFO, String.format("Adding new move task for %s:%d:%s/%s",
+                                                source.getHost(), source.getPort(), source.getPath(), entry.getFilename()));
+                                        tasks.put(entry.getFilename(), moveService.submit(new Move(source, destination, entry.getFilename())
+                                        ));
+                                    } else {
+                                        if ((candidate.getSize() == entry.getAttrs().getSize()) && (candidate.getMtime() == entry.getAttrs().getMTime())) {
+                                            logger.log(Level.FINER, String.format("No changes during one poll in size and mtime of %s:%d:%s/%s",
+                                                    source.getHost(), source.getPort(), source.getPath(), entry.getFilename()));
+                                            candidate.incScore();
+                                        } else {
+                                            logger.log(Level.FINER, String.format("mtime/size changes is observed, move is delayed for %s:%d:%s/%s",
+                                                    source.getHost(), source.getPort(), source.getPath(), entry.getFilename()));
+                                            candidate.clearScore(entry.getAttrs().getSize(), entry.getAttrs().getMTime());
+                                        }
                                     }
-                                    else {
-                                        sb.append(" <-- file movement status is not done");
-                                    }
-                                }
-                                else {
-                                    // Adding new task
-                                    logger.log(Level.INFO, "Adding new move task for " + entry.getFilename());
-                                    tasks.put(entry.getFilename(), moveService.submit(
-                                            new Move(source, destination, entry.getFilename())
-                                    ));
-                                    sb.append(" <-- file movement task is added");
+                                } else if (!candidates.containsKey(entry.getFilename())) {
+                                    logger.log(Level.INFO, String.format("Adding new move candidate for %s:%d:%s/%s",
+                                            source.getHost(), source.getPort(), source.getPath(), entry.getFilename()));
+                                    candidates.put(entry.getFilename(), new Candidate(entry.getAttrs().getSize(), entry.getAttrs().getMTime()));
                                 }
                                 break;
                             }
                         }
                     }
-                    sb.append("\n\t");
                 }
-                logger.log(Level.FINER, sb.toString());
                 Thread.sleep(1000);
                 for (Iterator<Map.Entry<String, Future>> it = tasks.entrySet().iterator(); it.hasNext();) {
                     Map.Entry<String, Future> entry = it.next();
                     if (entry.getValue().isDone()) {
-                        logger.log(Level.INFO, "Task status for file " +  entry.getKey() + " isDone");
+                        logger.log(Level.INFO, "Move task status for file " +  entry.getKey() + " isDone");
                         it.remove();
+                        candidates.remove(entry.getKey());
                     }
                 }
             }
