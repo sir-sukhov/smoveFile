@@ -2,11 +2,14 @@
 <!--Example configuration-->
 <configuration>
 <!--    Flow is moving files from source to destination-->
-<!--    One flow - one thread-->
-<!--    Number of concurrent file transfers in one flow-->
     <flows>
+        <!--    One flow - one thread for directory watch (separate sftp session)-->
         <flow>
-            <executors>2</executors>
+            <!--    Number of concurrent file transfers in one flow
+                    (2 separate scp sessions, one to source and one to destination)-->
+            <executors>3</executors>
+            <!-- Bandwidth limit for a flow, integer, in Mbps-->
+            <bandwidth>100</bandwidth>
             <source>
                 <host>127.0.0.1</host>
                 <port>22</port>
@@ -30,6 +33,7 @@
         </flow>
         <flow>
             <executors>1</executors>
+            <bandwidth>5</bandwidth>
             <source>
                 <host>127.0.0.1</host>
                 <port>22</port>

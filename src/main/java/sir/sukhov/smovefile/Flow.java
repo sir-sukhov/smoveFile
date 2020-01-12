@@ -11,6 +11,7 @@ import java.util.Vector;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,11 +22,15 @@ public class Flow implements Runnable {
     private Map<String, Future> tasks = new HashMap<>();
     private Map<String, Candidate> candidates = new HashMap<>();
     private static final Logger logger = Logger.getLogger(Flow.class.getName());
+    private int bandwidth;
+    private final AtomicLong bytesPerSecondLimit;
 
-    public Flow(Source source, Destination destination, int executorNumber) {
+    public Flow(Source source, Destination destination, int executorNumber, int bandwidth) {
         this.source = source;
         this.destination = destination;
         this.executorNumber =  executorNumber;
+        this.bandwidth = bandwidth;
+        this.bytesPerSecondLimit = new AtomicLong(bandwidth * 125000);
     }
 
     @Override
@@ -61,8 +66,10 @@ public class Flow implements Runnable {
                                         // Adding new task
                                         logger.log(Level.INFO, String.format("Adding new move task for %s:%d:%s/%s",
                                                 source.getHost(), source.getPort(), source.getPath(), entry.getFilename()));
-                                        tasks.put(entry.getFilename(), moveService.submit(new Move(source, destination, entry.getFilename())
+                                        bytesPerSecondLimit.set(bandwidth * 125000 / Integer.min(executorNumber,tasks.size() + 1));
+                                        tasks.put(entry.getFilename(), moveService.submit(new Move(source, destination, entry.getFilename(), bytesPerSecondLimit)
                                         ));
+
                                     } else {
                                         if ((candidate.getSize() == entry.getAttrs().getSize()) && (candidate.getMtime() == entry.getAttrs().getMTime())) {
                                             logger.log(Level.FINER, String.format("No changes during one poll in size and mtime of %s:%d:%s/%s",
@@ -89,6 +96,7 @@ public class Flow implements Runnable {
                     Map.Entry<String, Future> entry = it.next();
                     if (entry.getValue().isDone()) {
                         logger.log(Level.INFO, "Move task status for file " +  entry.getKey() + " isDone");
+                        bytesPerSecondLimit.set(bandwidth * 125000 / Integer.min(executorNumber,Integer.max(tasks.size() - 1,1)));
                         it.remove();
                         candidates.remove(entry.getKey());
                     }

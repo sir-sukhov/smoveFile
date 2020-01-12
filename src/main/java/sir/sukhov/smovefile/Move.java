@@ -7,6 +7,7 @@ import sir.sukhov.smovefile.targets.Source;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -16,11 +17,13 @@ public class Move implements Runnable {
     private Source source;
     private Destination destination;
     private String fileName;
+    private final AtomicLong bytesPerSecondLimit;
 
-    Move(Source source, Destination destination, String fileName) {
+    Move(Source source, Destination destination, String fileName, AtomicLong bytesPerSecondLimit) {
         this.source = source;
         this.destination = destination;
         this.fileName = fileName;
+        this.bytesPerSecondLimit = bytesPerSecondLimit;
     }
 
     @Override
@@ -31,10 +34,10 @@ public class Move implements Runnable {
         Session destinationSession = null;
         Channel sourceChannel = null;
         Channel destinationChannel = null;
-        InputStream sourceIS = null;
-        OutputStream sourceOS = null;
-        InputStream destIS = null;
-        OutputStream destOS = null;
+        InputStream sourceIS;
+        OutputStream sourceOS;
+        InputStream destIS;
+        OutputStream destOS;
         String sourceFilePath = source.getPath() + "/" + fileName;
         String destFilePath = destination.getPath() + "/" + fileName;
 
@@ -97,6 +100,9 @@ public class Move implements Runnable {
 
             // forward content
             int foo;
+            long counter = 0;
+            long timestamp = System.currentTimeMillis();
+            long now;
             while(true){
                 if(buf.length < fileSize) foo=buf.length;
                 else foo=(int) fileSize;
@@ -107,8 +113,17 @@ public class Move implements Runnable {
                     throw new RuntimeException("Got lt 0 from reading source input stream");
                 }
                 destOS.write(buf,0, foo);
+                counter += foo;
                 fileSize -=foo;
                 if (fileSize ==0L) break;
+                if (counter > bytesPerSecondLimit.get()) {
+                    now = System.currentTimeMillis();
+                    if (timestamp + 1000 > now) {
+                        Thread.sleep(timestamp + 1000 - now);
+                    }
+                    timestamp = System.currentTimeMillis();
+                    counter = 0;
+                }
             }
             if(checkAck(sourceIS)!=0){
                 logger.log(Level.SEVERE, "Source Input Stream ACK is not 0");
@@ -143,6 +158,8 @@ public class Move implements Runnable {
             logger.log(Level.SEVERE, "IO Exception:", e);
         } catch (SftpException e) {
             logger.log(Level.SEVERE, "JSch SFTP Exception:", e);
+        } catch (InterruptedException e) {
+            logger.log(Level.SEVERE, "Interrupted:", e);
         } finally {
             if (sourceChannel != null) sourceChannel.disconnect();
             if (destinationChannel != null) destinationChannel.disconnect();
@@ -152,7 +169,7 @@ public class Move implements Runnable {
 
     }
 
-    static int checkAck(InputStream in) throws IOException {
+    private static int checkAck(InputStream in) throws IOException {
         int b=in.read();
         // b may be 0 for success,
         //          1 for error,
@@ -162,7 +179,7 @@ public class Move implements Runnable {
         if(b==-1) return b;
 
         if(b==1 || b==2){
-            StringBuffer sb=new StringBuffer();
+            StringBuilder sb=new StringBuilder();
             int c;
             do {
                 c=in.read();

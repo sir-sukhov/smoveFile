@@ -22,7 +22,7 @@ public class Main {
     public static void main(String[] args) throws ConfigurationException, InterruptedException {
 
         Configurations configs = new Configurations();
-        XMLConfiguration config = null;
+        XMLConfiguration config;
         try {
             config = configs.xml("config.xml");
         }
@@ -34,9 +34,8 @@ public class Main {
         List<HierarchicalConfiguration<ImmutableNode>> flows = config.configurationsAt("flows.flow");
         final ExecutorService service = Executors.newFixedThreadPool(flows.size());
 
-        List<Future> futures =  new ArrayList<>();
-        for (int i = 0; i < flows.size(); i++) {
-            HierarchicalConfiguration<ImmutableNode> flow = flows.get(i);
+        List<Future> flowTasks =  new ArrayList<>();
+        for (HierarchicalConfiguration<ImmutableNode> flow : flows) {
             Source source = new Source((String) flow.getProperty("source.host"),
                     Integer.parseInt((String) flow.getProperty("source.port")),
                     (String) flow.getProperty("source.user"),
@@ -50,10 +49,14 @@ public class Main {
                     ((String) flow.getProperty("destination.identity")).replace("~", System.getProperty("user.home")),
                     ((String) flow.getProperty("destination.knownHosts")).replace("~", System.getProperty("user.home")),
                     (String) flow.getProperty("destination.path"));
-            futures.add(service.submit(new Flow(source,destination,Integer.parseInt((String) flow.getProperty("executors")))));
+            flowTasks.add(service.submit(new Flow(
+                    source,
+                    destination,
+                    Integer.parseInt((String) flow.getProperty("executors")),
+                    Integer.parseInt((String) flow.getProperty("bandwidth")))));
         }
         while (true) {
-            if (anyTaskIsDone(futures)) {
+            if (anyTaskIsDone(flowTasks)) {
                 service.shutdown();
                 throw new RuntimeException("Child task exited");
             }
@@ -64,7 +67,7 @@ public class Main {
 
     }
 
-    public static boolean anyTaskIsDone(List<Future> futures) {
+    private static boolean anyTaskIsDone(List<Future> futures) {
         for (Future task : futures) {
             if (task.isDone()) {
                 return true;
