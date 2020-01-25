@@ -27,12 +27,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class Move implements Runnable {
 
-    private static Logger logger = Logger.getLogger(Move.class.getName());
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Flow.class);
     private Source source;
     private Destination destination;
     private String fileName;
@@ -61,6 +59,7 @@ public class Move implements Runnable {
         String destFilePath = destination.getPath() + "/" + fileName;
 
         try {
+
             sourceJSch.addIdentity(source.getIdentity());
             sourceJSch.setKnownHosts(source.getKnownHosts());
             sourceSession = sourceJSch.getSession(source.getUser(), source.getHost(), source.getPort());
@@ -92,7 +91,6 @@ public class Move implements Runnable {
             buf[0]=0; sourceOS.write(buf, 0, 1); sourceOS.flush();
             // get '\0' from dest Input Stream
             if(checkAck(destIS)!=0){
-                logger.log(Level.SEVERE, "Destination Input Stream ACK is not 0");
                 throw new RuntimeException("Destination Input Stream ACK is not 0");
             }
 
@@ -113,7 +111,6 @@ public class Move implements Runnable {
             buf[0]=0; sourceOS.write(buf, 0, 1); sourceOS.flush();
             // get '\0' from dest Output Stream
             if(checkAck(destIS)!=0){
-                logger.log(Level.SEVERE, "Destination Input Stream ACK is not 0");
                 throw new RuntimeException("Destination Input Stream ACK is not 0");
             }
 
@@ -131,7 +128,6 @@ public class Move implements Runnable {
                 foo = sourceIS.read(buf, 0, foo);
                 if(foo<0){
                     // error
-                    logger.log(Level.SEVERE, "Got lt 0 from reading source input stream");
                     throw new RuntimeException("Got lt 0 from reading source input stream");
                 }
                 destOS.write(buf,0, foo);
@@ -148,7 +144,6 @@ public class Move implements Runnable {
                 }
             }
             if(checkAck(sourceIS)!=0){
-                logger.log(Level.SEVERE, "Source Input Stream ACK is not 0");
                 throw new RuntimeException("Source Input Stream ACK is not 0");
             }
 
@@ -157,7 +152,6 @@ public class Move implements Runnable {
             sourceOS.write(buf, 0, 1); sourceOS.flush();
             destOS.write(buf, 0, 1); destOS.flush();
             if(checkAck(destIS)!=0){
-                logger.log(Level.SEVERE, "Destination Input Stream ACK is not 0");
                 throw new RuntimeException("Destination Input Stream ACK is not 0");
             }
 
@@ -175,14 +169,17 @@ public class Move implements Runnable {
             sourceChannelSftp.rm(sourceFilePath);
 
         } catch (JSchException e) {
-            logger.log(Level.SEVERE, "JSch Exception:", e);
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "IO Exception:", e);
+            log.error("JSch Exception:", e);
         } catch (SftpException e) {
-            logger.log(Level.SEVERE, "JSch SFTP Exception:", e);
+            log.error("JSch SFTP Exception:", e);
         } catch (InterruptedException e) {
-            logger.log(Level.SEVERE, "Move thread is interrupted:", e);
-        } finally {
+            log.debug("Move thread is interrupted:", e);
+        } catch (IOException e) {
+            log.error("IO Exception:", e);
+        } catch (RuntimeException e) {
+            log.error("Runtime exception", e);
+        }
+        finally {
             if (sourceChannel != null) sourceChannel.disconnect();
             if (destinationChannel != null) destinationChannel.disconnect();
             if (sourceSession != null) sourceSession.disconnect();
@@ -209,10 +206,10 @@ public class Move implements Runnable {
             }
             while(c!='\n');
             if(b==1){ // error
-                logger.log(Level.SEVERE, sb.toString());
+                log.error(sb.toString());
             }
             if(b==2){ // fatal error
-                logger.log(Level.SEVERE, sb.toString());
+                log.error(sb.toString());
             }
         }
         return b;

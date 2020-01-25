@@ -33,12 +33,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class Main {
 
-    private static final Logger logger = Logger.getLogger(Main.class.getName());
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Main.class);
     private static ExecutorService flowService;
     private static List<ExecutorService> moveServices = new ArrayList<>();
     private static List<Future> flowTasks = new ArrayList<>();
@@ -51,22 +49,22 @@ public class Main {
             config = configs.xml("config.xml");
         }
         catch (ConfigurationException e) {
-            logger.log(Level.INFO, "Can't find config in default location, trying src/main/resources/config.xml");
+            log.warn("Can't find config in default location, trying src/main/resources/config.xml");
             config = configs.xml("src/main/resources/config.xml");
         }
 
         List<HierarchicalConfiguration<ImmutableNode>> flows = config.configurationsAt("flows.flow");
         flowService = Executors.newFixedThreadPool(flows.size());
 
-        Runtime.getRuntime().addShutdownHook(new Thread()
+        Runtime.getRuntime().addShutdownHook(new Thread("ShutdownHook")
         {
             public void run()
             {
-                logger.log(Level.INFO, "Starting shutdown sequence");
+                log.info("Shutdown sequence start");
                 flowService.shutdownNow();
                 //Shutdown all move services
                 for (int i = 0; i < moveServices.size(); i++) {
-                    System.out.println("Sending shutdown to move service " + i);
+                    log.warn("Sending shutdown to move service " + i);
                     moveServices.get(i).shutdown();
                 }
                 //Wait for all move services termination
@@ -76,7 +74,7 @@ public class Main {
                             service.shutdownNow();
                         }
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        log.error("Interrupted on awaiting moveService termination", e);
                     }
                 }
             }
