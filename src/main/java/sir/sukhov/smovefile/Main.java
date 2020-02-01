@@ -21,12 +21,24 @@ package sir.sukhov.smovefile;
 
 import org.apache.commons.configuration2.HierarchicalConfiguration;
 import org.apache.commons.configuration2.XMLConfiguration;
-import org.apache.commons.configuration2.builder.fluent.Configurations;
+import org.apache.commons.configuration2.builder.FileBasedConfigurationBuilder;
+import org.apache.commons.configuration2.builder.fluent.Parameters;
 import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.commons.configuration2.tree.ImmutableNode;
+import org.xml.sax.ErrorHandler;
+import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
 import sir.sukhov.smovefile.targets.Destination;
 import sir.sukhov.smovefile.targets.Source;
 
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
+import javax.xml.validation.SchemaFactory;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -41,16 +53,50 @@ public class Main {
     private static List<ExecutorService> moveServices = new ArrayList<>();
     private static List<Future> flowTasks = new ArrayList<>();
 
-    public static void main(String[] args) throws ConfigurationException, InterruptedException {
+    public static void main(String[] args) throws InterruptedException {
 
-        Configurations configs = new Configurations();
-        XMLConfiguration config;
-        try {
-            config = configs.xml("config.xml");
+        XMLConfiguration config = null;
+
+        String CONFIG_FILE_NAME = "config.xml";
+        if (!(new File("config.xml")).exists()) {
+            CONFIG_FILE_NAME = "src/main/resources/config.xml";
         }
-        catch (ConfigurationException e) {
-            log.warn("Can't find config in default location, trying src/main/resources/config.xml");
-            config = configs.xml("src/main/resources/config.xml");
+
+        try {
+            StreamSource schemaSource = new StreamSource(Main.class.getClassLoader().getResourceAsStream("config.xsd"));
+            Schema schema = SchemaFactory
+                    .newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                    .newSchema(schemaSource);
+            DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
+            docBuilderFactory.setSchema(schema);
+            DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
+            docBuilder.setErrorHandler(new ErrorHandler() {
+                @Override
+                public void warning(SAXParseException exception) throws SAXException {
+                    throw exception;
+                }
+
+                @Override
+                public void error(SAXParseException exception) throws SAXException {
+                    throw exception;
+                }
+
+                @Override
+                public void fatalError(SAXParseException exception)  throws SAXException {
+                    throw exception;
+                }
+            });
+            Parameters params = new Parameters();
+            FileBasedConfigurationBuilder<XMLConfiguration> builder =
+                    new FileBasedConfigurationBuilder<>(XMLConfiguration.class)
+                            .configure(params.xml()
+                                    .setFileName(CONFIG_FILE_NAME)
+                                    .setDocumentBuilder(docBuilder));
+            config = builder.getConfiguration();
+        } catch (ConfigurationException | ParserConfigurationException | SAXException e) {
+            //handle exception
+            log.error("Error on building configuration", e);
+            System.exit(1);
         }
 
         List<HierarchicalConfiguration<ImmutableNode>> flows = config.configurationsAt("flows.flow");
